@@ -1,0 +1,390 @@
+<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>LemonLife</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body{margin:0;font-family:sans-serif;overflow:hidden;background:#ffeaa7}
+#room{position:absolute;inset:0;background:linear-gradient(#fff8d6,#ffeaa7)!important;overflow:hidden}
+
+/* Lemon */
+.lemon{
+  position:absolute;width:90px;height:90px;border-radius:50%;
+  border:5px solid #f39c12;cursor:pointer;transition:.1s;
+  display:flex;align-items:center;justify-content:center;
+  font-size:22px;
+}
+.name{
+  position:absolute;top:-30px;width:100%;text-align:center;
+  font-size:16px;font-weight:bold;
+}
+
+/* Problem icon */
+.problemIcon{
+  position:absolute;top:-55px;left:50%;transform:translateX(-50%);
+  font-size:32px;pointer-events:none;
+}
+
+/* Buttons */
+#add{
+  position:fixed;top:15px;left:15px;padding:14px 20px;
+  background:#55efc4;border:0;border-radius:12px;
+  font-size:20px;font-weight:bold;cursor:pointer;z-index:20;
+}
+#title{
+  position:fixed;top:15px;right:15px;font-size:24px;
+  font-weight:bold;z-index:20;
+}
+
+/* Menu */
+#menu{
+  position:absolute;background:#fff;border-radius:14px;padding:12px;
+  box-shadow:0 4px 12px rgba(0,0,0,.25);display:none;z-index:30;
+  font-size:20px;width:230px;
+}
+#menu button{
+  width:100%;margin:6px 0;padding:10px;border:0;border-radius:10px;
+  background:#fdcb6e;font-size:18px;cursor:pointer;
+}
+
+/* Scene panel */
+#scene,#relPanel{
+  position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  background:#fff;border-radius:16px;padding:16px;
+  box-shadow:0 4px 14px rgba(0,0,0,.35);z-index:40;
+  display:none;font-size:20px;width:340px;
+}
+#scene button,#relPanel button{
+  margin-top:10px;padding:10px;border:0;border-radius:10px;
+  background:#fdcb6e;font-size:18px;cursor:pointer;width:100%;
+}
+#relList{
+  max-height:260px;overflow:auto;margin-top:10px;font-size:18px;
+}
+</style></head><body>
+
+<button id="add">Add</button>
+<div id="title"></div>
+<div id="room"></div>
+
+<!-- Menu -->
+<div id="menu">
+  <button data-a="talk">Talk</button>
+  <button data-a="feed">Feed</button>
+  <button data-a="rel">View Relationships</button>
+  <button data-a="prob">Check Problem</button>
+</div>
+
+<!-- Scene -->
+<div id="scene">
+  <div id="sceneText"></div>
+  <div id="sceneChoices"></div>
+  <button id="sceneClose">Close</button>
+</div>
+
+<!-- Relationship Panel -->
+<div id="relPanel">
+  <div id="relTitle"><b>Relationships</b></div>
+  <div id="relList"></div>
+  <button id="relClose">Close</button>
+</div>
+
+<script>
+/* SAVE INIT */
+let D;
+try{D=JSON.parse(localStorage.getItem("LL_TOMO_TABLET_GA")||"{}")}catch(e){D={}}
+if(!D.island)D.island=prompt("Island name?")||"Lemon Isle";
+if(!D.residents)D.residents=[];
+localStorage.setItem("LL_TOMO_TABLET_GA",JSON.stringify(D));
+
+let R=D.residents,rm=document.getElementById("room"),M=document.getElementById("menu"),S=null;
+document.getElementById("title").textContent=D.island;
+function save(){localStorage.setItem("LL_TOMO_TABLET_GA",JSON.stringify(D))}
+
+/* GENDER ICONS */
+function genderIcon(g){
+  if(g==="male")return "♂️";
+  if(g==="female")return "♀️";
+  return "⚪";
+}
+
+/* SWEETHEART RULES */
+function canSweetheart(a,b){
+  if(a.age==null||b.age==null)return false;
+  if(a.age<13||b.age<13)return false;
+  if(a.gender==="none"||b.gender==="none")return true;
+  return (a.gender==="male"&&b.gender==="female")||(a.gender==="female"&&b.gender==="male");
+}
+
+/* ADD RESIDENT */
+function addRes(){
+  let n=prompt("Name?");if(!n)return;
+  let c=prompt("Color? (yellow, #ffeb3b, etc.)","yellow")||"yellow";
+  let g=prompt("Gender? (male / female / none)","male")||"male";
+  g=g.toLowerCase();
+  if(g!=="male"&&g!=="female"&&g!=="none"){
+    g=Math.random()<.5?"male":"female";
+  }
+  let age=parseInt(prompt("Age? (number)","18")||"18",10);
+  if(isNaN(age)||age<0)age=18;
+
+  let p=["cheerful","lazy","dramatic","chaotic"][Math.random()*4|0];
+  let o={
+    id:Date.now(),n,p,c,
+    gender:g,age:age,
+    x:Math.random()*(innerWidth-120)+20,
+    y:Math.random()*(innerHeight-180)+80,
+    h:80,hu:40,
+    rel:{},
+    problem:null,
+    icon:null
+  };
+  R.push(o);spawn(o);save();
+}
+
+/* SPAWN */
+function spawn(o){
+  if(!o.rel)o.rel={};
+
+  let d=document.createElement("div");
+  d.className="lemon";
+  d.style.background=o.c;
+  d.style.left=o.x+"px";d.style.top=o.y+"px";
+
+  let t=document.createElement("div");
+  t.className="name";
+  t.textContent=o.n+" "+genderIcon(o.gender)+" ("+o.age+")";
+  d.appendChild(t);
+
+  let ic=document.createElement("div");
+  ic.className="problemIcon";
+  ic.style.display="none";
+  d.appendChild(ic);
+  o.icon=ic;
+
+  d.ontouchstart=e=>startHold(e,o);
+  d.ontouchend=endHold;
+  d.onclick=e=>openMenu(e,o);
+
+  rm.appendChild(d);
+  o.el=d;
+}
+
+/* HOLD TO PICK UP */
+let holdTimer=null,dragging=null,offX=0,offY=0;
+
+function startHold(e,o){
+  let touch=e.touches[0];
+  holdTimer=setTimeout(()=>{
+    dragging=o;
+    let rect=o.el.getBoundingClientRect();
+    offX=touch.clientX-rect.left;
+    offY=touch.clientY-rect.top;
+  },200);
+}
+
+function endHold(){
+  clearTimeout(holdTimer);
+  if(dragging){
+    let o=dragging;
+    dragging=null;
+    let other=R.find(r=>r.id!==o.id && dist(o,r)<110);
+    if(other)openMeetingScene(o,other);
+    save();
+  }
+}
+
+document.ontouchmove=e=>{
+  if(!dragging)return;
+  let touch=e.touches[0];
+  let o=dragging;
+  o.x=touch.clientX-offX;
+  o.y=touch.clientY-offY;
+  o.x=Math.max(10,Math.min(innerWidth-110,o.x));
+  o.y=Math.max(60,Math.min(innerHeight-140,o.y));
+  o.el.style.left=o.x+"px";
+  o.el.style.top=o.y+"px";
+};
+
+/* DIST */
+function dist(a,b){
+  let dx=a.x-b.x,dy=a.y-b.y;
+  return Math.sqrt(dx*dx+dy*dy);
+}
+
+/* WALKING + PROBLEMS */
+function walk(){
+  R.forEach(o=>{
+    if(!o.el)return;
+
+    if(Math.random()<.02)o.h-=2;
+
+    if(o.h<40 && !o.problem){
+      let probs=["❗","⭐","❤️","💰"];
+      o.problem=probs[Math.random()*probs.length|0];
+      o.icon.textContent=o.problem;
+      o.icon.style.display="block";
+    }
+
+    if(Math.random()<.7)return;
+
+    o.x+=Math.random()*14-7;
+    o.y+=Math.random()*14-7;
+    o.x=Math.max(10,Math.min(innerWidth-110,o.x));
+    o.y=Math.max(60,Math.min(innerHeight-140,o.y));
+    o.el.style.left=o.x+"px";o.el.style.top=o.y+"px";
+  });
+  save();
+}
+setInterval(walk,900);
+
+/* MENU */
+function openMenu(e,o){
+  if(dragging)return;
+  S=o;
+  M.style.left=o.x+40+"px";
+  M.style.top=o.y+100+"px";
+  M.style.display="block";
+}
+document.body.onclick=e=>{
+  if(!e.target.closest(".lemon")&&!e.target.closest("#menu")&&!e.target.closest("#scene")&&!e.target.closest("#relPanel"))
+    M.style.display="none";
+};
+
+/* SCENE + REL PANELS */
+let scene=document.getElementById("scene"),
+    sceneText=document.getElementById("sceneText"),
+    sceneChoices=document.getElementById("sceneChoices");
+document.getElementById("sceneClose").onclick=()=>scene.style.display="none";
+
+let relPanel=document.getElementById("relPanel"),
+    relList=document.getElementById("relList");
+document.getElementById("relClose").onclick=()=>relPanel.style.display="none";
+
+/* MEETING CUTSCENE */
+function openMeetingScene(a,b){
+  scene.style.display="block";
+  sceneText.innerHTML=`<b>${a.n}</b> (${genderIcon(a.gender)}, ${a.age}) meets <b>${b.n}</b> (${genderIcon(b.gender)}, ${b.age})!<br><small>${a.p} & ${b.p}</small>`;
+  sceneChoices.innerHTML="";
+
+  let mk=(txt,fn)=>{
+    let btn=document.createElement("button");
+    btn.textContent=txt;btn.onclick=fn;sceneChoices.appendChild(btn);
+  };
+
+  mk("Chat",()=>{
+    changeRel(a,b,10);changeRel(b,a,10);
+    a.h+=5;b.h+=5;
+    sceneText.innerHTML="They had a nice chat.";
+  });
+
+  mk("Joke",()=>{
+    if(Math.random()<.5){
+      changeRel(a,b,15);changeRel(b,a,15);
+      sceneText.innerHTML="They laughed together!";
+    }else{
+      changeRel(a,b,-10);changeRel(b,a,-10);
+      sceneText.innerHTML="The joke flopped.";
+    }
+  });
+
+  mk("Argue",()=>{
+    changeRel(a,b,-15);changeRel(b,a,-15);
+    a.h-=10;b.h-=10;
+    sceneText.innerHTML="They argued.";
+  });
+
+  save();
+}
+
+/* RELATIONSHIPS */
+function changeRel(a,b,delta){
+  if(!a.rel)a.rel={};
+  if(!a.rel[b.id])a.rel[b.id]=0;
+  let before=a.rel[b.id];
+  a.rel[b.id]+=delta;
+  let after=a.rel[b.id];
+
+  if(before<80 && after>=80){
+    if(canSweetheart(a,b)){
+      sceneText.innerHTML="They are becoming Sweethearts! ❤️";
+    }else{
+      sceneText.innerHTML="They feel very close, but not romantically.";
+    }
+  }
+}
+
+function relLabel(v,a,b){
+  if(v<-20)return"Enemy";
+  if(v<20)return"Acquaintance";
+  if(v<50)return"Friend";
+  if(v<80)return"Close Friend";
+  return canSweetheart(a,b)?"Sweetheart":"Close Friend";
+}
+
+/* ACTIONS */
+let A={
+  talk(){
+    S.h+=5;
+    scene.style.display="block";
+    sceneText.innerHTML=`${S.n} talks happily.`;
+    sceneChoices.innerHTML="";
+    save();
+  },
+  feed(){
+    S.hu-=20;S.h+=5;
+    scene.style.display="block";
+    sceneText.innerHTML=`${S.n} eats and feels better.`;
+    sceneChoices.innerHTML="";
+    save();
+  },
+  rel(){
+    relPanel.style.display="block";
+    relList.innerHTML="";
+    if(!S.rel||Object.keys(S.rel).length===0){
+      relList.textContent="No relationships yet.";
+      return;
+    }
+    for(let k in S.rel){
+      let v=S.rel[k];
+      let o=R.find(r=>r.id==k);
+      if(!o)continue;
+      let d=document.createElement("div");
+      d.textContent=
+        o.n+" "+genderIcon(o.gender)+" ("+o.age+") — "+
+        relLabel(v,S,o)+" ("+v+")";
+      relList.appendChild(d);
+    }
+  },
+  prob(){
+    if(!S.problem){
+      scene.style.display="block";
+      sceneText.innerHTML=`${S.n} has no worries.`;
+      sceneChoices.innerHTML="";
+      return;
+    }
+    scene.style.display="block";
+    sceneText.innerHTML=`${S.n} has a problem: ${S.problem}`;
+    sceneChoices.innerHTML="";
+
+    let solve=document.createElement("button");
+    solve.textContent="Help them";
+    solve.onclick=()=>{
+      S.h+=20;S.problem=null;
+      S.icon.style.display="none";
+      sceneText.innerHTML=`You helped ${S.n}.`;
+      save();
+    };
+    sceneChoices.appendChild(solve);
+  }
+};
+
+M.onclick=e=>{
+  let a=e.target.dataset.a;
+  if(a&&A[a])A[a]();
+};
+
+/* LOAD */
+R.forEach(spawn);
+
+/* ADD BUTTON */
+document.getElementById("add").onclick=addRes;
+</script></body></html>
